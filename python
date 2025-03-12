@@ -1,0 +1,87 @@
+pip install transformers datasets torch scikit-learn
+import pandas as pd
+from datasets import Dataset
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments, Trainer
+
+# ✅ Load Dataset
+def load_dataset(file_path):
+    """
+    Loads the financial news articles from a CSV file and splits it into train and test datasets.
+    """
+    df = pd.read_csv(file_path)
+    dataset = Dataset.from_pandas(df)
+    return dataset.train_test_split(test_size=0.2)
+
+# ✅ Preprocessing Function
+def preprocess_data(examples, tokenizer):
+    """
+    Tokenizes the data to prepare it for model input.
+    """
+    return tokenizer(examples["Full Article"], padding="max_length", truncation=True)
+
+# ✅ Setup Model & Tokenizer
+def load_model_and_tokenizer(model_name):
+    """
+    Loads the pre-trained model and tokenizer.
+    """
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)  # 2 labels: Real & AI-Generated
+    return model, tokenizer
+
+# ✅ Setup Training Arguments
+def setup_training_args():
+    """
+    Sets up the training arguments for the Trainer.
+    """
+    return TrainingArguments(
+        output_dir="./results",          # output directory
+        num_train_epochs=3,              # number of training epochs
+        per_device_train_batch_size=16,  # batch size for training
+        per_device_eval_batch_size=64,   # batch size for evaluation
+        warmup_steps=500,                # number of warmup steps for learning rate scheduler
+        weight_decay=0.01,               # strength of weight decay
+        logging_dir="./logs",            # directory for storing logs
+        logging_steps=10,
+    )
+
+# ✅ Initialize Trainer and Train
+def train_model(model, tokenizer, train_dataset, eval_dataset, training_args):
+    """
+    Initializes the Trainer and starts training the model.
+    """
+    trainer = Trainer(
+        model=model,                         # the model to be trained
+        args=training_args,                  # training arguments
+        train_dataset=train_dataset,         # training dataset
+        eval_dataset=eval_dataset,           # evaluation dataset
+        tokenizer=tokenizer,                 # tokenizer for preprocessing
+    )
+    trainer.train()
+
+# ✅ Main Script
+def main():
+    # Define the file path for your dataset
+    file_path = "financial_news_articles.csv"
+
+    # Load dataset and split it into training and testing sets
+    dataset = load_dataset(file_path)
+
+    # Load the pre-trained model and tokenizer
+    model_name = "roberta-base-openai-detector"  # You can change this to another model if needed
+    model, tokenizer = load_model_and_tokenizer(model_name)
+
+    # Tokenize the dataset
+    dataset = dataset.map(lambda examples: preprocess_data(examples, tokenizer), batched=True)
+
+    # Set up training arguments
+    training_args = setup_training_args()
+
+    # Train the model
+    train_model(model, tokenizer, dataset["train"], dataset["test"], training_args)
+
+    # Optionally, save the model and tokenizer after training
+    model.save_pretrained("financial_news_detector")
+    tokenizer.save_pretrained("financial_news_detector")
+
+if __name__ == "__main__":
+    main()
